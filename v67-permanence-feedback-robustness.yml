@@ -39,7 +39,38 @@ jobs:
     env:
       V67_OFF_STORED_REVERSAL_ZERO: ${{ matrix.off_zero }}
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout V67 experiment package
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12 for trajectory generation and FaIR
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install trajectory and FaIR dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install fair==2.2.4 numpy pandas xarray scipy
+          python - <<'PY'
+          import fair
+          import numpy
+          import pandas
+          assert fair.__version__ == "2.2.4"
+          print("FaIR", fair.__version__)
+          print("NumPy", numpy.__version__)
+          print("pandas", pandas.__version__)
+          PY
+
+      - name: Preflight V67 package files
+        run: |
+          set -euo pipefail
+          for f in             generate_robustness_matrix_v67.py             patch_fair_v67.py             patch_hector_v67.py             patch_oscar_v67.py             analyze_v67_case.py             synthesize_v67.py
+          do
+            test -f "$f" || { echo "ERROR: missing root file $f"; exit 1; }
+          done
+          python -m py_compile             generate_robustness_matrix_v67.py             patch_fair_v67.py             patch_hector_v67.py             patch_oscar_v67.py             analyze_v67_case.py             synthesize_v67.py
+
       - name: Restore pinned V65 and V62.2 code
         run: |
           set -euo pipefail
@@ -57,16 +88,23 @@ jobs:
           cp /tmp/V65/patch_hector_v65.py .
           cp /tmp/V65/run_oscar_matched_forcing_v63.py .
           echo "f2d58812b8c54bfc52da1dee360ca06f8ccfb888791cf3dc1105bc038ae3a637  external_validation_net_co2_trajectory.csv" | sha256sum -c -
-      - name: Generate trajectories
+
+      - name: Generate and verify V67 trajectories
         run: |
-          python generate_robustness_matrix_v67.py --input external_validation_net_co2_trajectory.csv --outdir trajectories
+          set -euo pipefail
+          rm -rf trajectories
+          python generate_robustness_matrix_v67.py             --input external_validation_net_co2_trajectory.csv             --outdir trajectories
           test -f "trajectories/${{ matrix.case_id }}.csv"
-      - uses: actions/setup-python@v7
-        with: {python-version: "3.12"}
-      - name: Install FaIR
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install fair==2.2.4 numpy pandas xarray scipy
+          test -f trajectories/manifest.csv
+          test -f trajectories/manifest.json
+          python - <<'PY'
+          import pandas as pd
+          m = pd.read_csv("trajectories/manifest.csv")
+          assert len(m) == 12
+          assert m["case_id"].nunique() == 12
+          assert "${{ matrix.case_id }}" in set(m["case_id"])
+          print(m[["case_id","reversal_protocol","schedule","permafrost_protocol"]].to_string(index=False))
+          PY
       - name: Clone pinned FaIR source
         run: |
           rm -rf "$FAIR_SOURCE_DIR"

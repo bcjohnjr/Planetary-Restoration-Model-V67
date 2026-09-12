@@ -5,6 +5,8 @@ import argparse, json
 from pathlib import Path
 import numpy as np
 import pandas as pd
+
+TRAPZ = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz
 ALPHA=5.35; START=2027; END=2183
 
 def window(df,label):
@@ -16,13 +18,13 @@ def common(df,label,on_col,off_col):
     x=window(df,label); on=x[on_col].to_numpy(float); off=x[off_col].to_numpy(float)
     if not np.isfinite(on).all() or not np.isfinite(off).all() or np.any(on<=0) or np.any(off<=0): raise RuntimeError(f'{label}: invalid CO2')
     d=off-on; rf=ALPHA*np.log(off/on); yrs=x.year.to_numpy(float)
-    return {'terminal_delta_co2_ppm':float(d[-1]),'integrated_delta_co2_ppm_year':float(np.trapz(d,yrs)),
-            'terminal_co2_forcing_benefit_wm2':float(rf[-1]),'integrated_co2_forcing_benefit_wm2_year':float(np.trapz(rf,yrs))}
+    return {'terminal_delta_co2_ppm':float(d[-1]),'integrated_delta_co2_ppm_year':float(TRAPZ(d,yrs)),
+            'terminal_co2_forcing_benefit_wm2':float(rf[-1]),'integrated_co2_forcing_benefit_wm2_year':float(TRAPZ(rf,yrs))}
 
 def temp(df,label,on_col,off_col):
     x=window(df,label); d=x[off_col].to_numpy(float)-x[on_col].to_numpy(float); yrs=x.year.to_numpy(float)
     if not np.isfinite(d).all(): raise RuntimeError(f'{label}: invalid temperature')
-    return {'terminal_avoided_warming_c':float(d[-1]),'integrated_avoided_warming_c_year':float(np.trapz(d,yrs))}
+    return {'terminal_avoided_warming_c':float(d[-1]),'integrated_avoided_warming_c_year':float(TRAPZ(d,yrs))}
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--case-id',required=True); ap.add_argument('--manifest',required=True); ap.add_argument('--trajectory',required=True)
